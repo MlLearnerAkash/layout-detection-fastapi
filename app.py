@@ -2,7 +2,7 @@ from PIL import Image
 import io
 import pandas as pd
 import numpy as np
-
+import torch
 from typing import Optional
 
 from ultralytics import YOLO
@@ -87,6 +87,7 @@ def get_model_predict(model: YOLO, input_image: Image, save: bool = False, image
                         flipud= 0.0,
                         fliplr= 0.0,
                         mosaic = 0.0,
+                        device = [0 if torch.cuda.is_available() else "cpu"]
                         )
     
     # Transform predictions to pandas dataframe
