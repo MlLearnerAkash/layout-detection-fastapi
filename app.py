@@ -115,13 +115,20 @@ def add_bboxs_on_img(image: Image, predict: pd.DataFrame()) -> Image:
     predict = predict.sort_values(by=['xmin'], ascending=True)
 
     # iterate over the rows of predict dataframe
+    areas = []
     for i, row in predict.iterrows():
         # create the text to be displayed on image
         text = f"{row['name']}: {int(row['confidence']*100)}%"
         # get the bounding box coordinates
         bbox = [row['xmin'], row['ymin'], row['xmax'], row['ymax']]
+        height =row['ymax']-row['ymin']
+        width = row['xmax']- row['xmin']
+        areas.append(height*width)
         # add the bounding box and text on the image
         annotator.box_label(bbox, text, color=colors(row['class'], True))
+    area_covered = sum(areas)
+    area_covered_ratio = area_covered/8417550
+    print(area_covered_ratio)
     # convert the annotated image to PIL image
     return Image.fromarray(annotator.result())
 
