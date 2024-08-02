@@ -4,11 +4,11 @@ import pandas as pd
 import numpy as np
 import torch
 from typing import Optional
-
+import layoutparser as lp
 from ultralytics import YOLO
 from ultralytics.utils.plotting import Annotator, colors
-
-
+import cv2
+from detectron2 import *
 # Initialize the models
 model_sample_model = YOLO("./models/doclaynet_chkpt/best_doclaynet.pt")
 
@@ -113,8 +113,53 @@ def add_bboxs_on_img(image: Image, predict: pd.DataFrame()) -> Image:
 
     # sort predict by xmin value
     predict = predict.sort_values(by=['xmin'], ascending=True)
-
+    #Adding Layoyt parser
+    # lp_model = lp.Detectron2LayoutModel('lp://PubLayNet/faster_rcnn_R_50_FPN_3x/config', 
+    #                              extra_config=["MODEL.ROI_HEADS.SCORE_THRESH_TEST", 0.8],
+    #                              label_map={0: "Fig", 1: "Title", 2: "List", 3:"Table", 4:"Text"})
+    # lp_model= lp.AutoLayoutModel('lp://EfficientDete/PubLayNet')
     # iterate over the rows of predict dataframe
+    areas = []
+    for i, row in predict.iterrows():
+        # create the text to be displayed on image
+        text = f"{row['name']}: {int(row['confidence']*100)}%"
+        # get the bounding box coordinates
+        bbox = [row['xmin'], row['ymin'], row['xmax'], row['ymax']]
+        # height =row['ymax']-row['ymin']
+        # width = row['xmax']- row['xmin']
+        # areas.append(height*width)
+        # add the bounding box and text on the image
+        annotator.box_label(bbox, text, color=colors(row['class'], True))
+        # crop_img = np.array(image)[int(row['ymin']):int(row['ymax']), int(row['xmin']):int(row['xmax']),:]
+        # layout = lp_model.detect(crop_img)
+        # print([(block.score, block.type) for block in layout._blocks])
+        # lp.draw_box(crop_img, layout, box_width=3).save(f"lp_det_{i}.png", format="PNG")
+
+    # area_covered = sum(areas)
+    # area_covered_ratio = area_covered/1050625
+    # print(area_covered_ratio)
+    # convert the annotated image to PIL image
+    return Image.fromarray(annotator.result())
+
+def add_filtered_bboxs_on_img(image: Image, predict: pd.DataFrame()) -> Image:
+    """
+    add a bounding box on the image
+
+    Args:
+    image (Image): input image
+    predict (pd.DataFrame): predict from model
+
+    Returns:
+    Image: image whis bboxs
+    """
+    # Create an annotator object
+    annotator = Annotator(np.array(image))
+
+    # sort predict by xmin value
+    predict = predict.sort_values(by=['xmin'], ascending=True)
+    # predict = predict[predict['confidence']<0.8]
+    # iterate over the rows of predict dataframe
+
     areas = []
     for i, row in predict.iterrows():
         # create the text to be displayed on image
@@ -126,12 +171,13 @@ def add_bboxs_on_img(image: Image, predict: pd.DataFrame()) -> Image:
         areas.append(height*width)
         # add the bounding box and text on the image
         annotator.box_label(bbox, text, color=colors(row['class'], True))
-    area_covered = sum(areas)
-    area_covered_ratio = area_covered/8417550
-    print(area_covered_ratio)
-    # convert the annotated image to PIL image
-    return Image.fromarray(annotator.result())
+        crop_img = np.array(image)[int(row['ymin']):int(row['ymax']), int(row['xmin']):int(row['xmax']),:]
+        #NOTE: To use Detectron
+        if True:
+            running_dectron(crop_img, f"crop_{i}")
 
+    running_dectron(np.array(image), f"original_image.png")
+    return Image.fromarray(annotator.result())
 
 ################################# Models #####################################
 
@@ -153,6 +199,48 @@ def detect_sample_model(input_image: Image) -> pd.DataFrame:
         save=False,
         image_size=640,
         augment=False,
-        conf=0.5,
+        conf=0.15,
     )
     return predict
+############################################################ Detectron ###############################################################
+from detectron2.config import get_cfg
+import argparse
+
+def setup_cfg():
+    # load config from file and command-line arguments
+    cfg = get_cfg()
+    cfg.merge_from_file("/home/akash/ws/layout-segmentation-yolo/detectron2/configs/DLA_mask_rcnn_X_101_32x8d_FPN_3x.yaml")
+    # cfg.merge_from_list(args.opts)
+    # Set score_threshold for builtin models
+    cfg.MODEL.RETINANET.SCORE_THRESH_TEST = 0.5
+    cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.5
+    cfg.MODEL.PANOPTIC_FPN.COMBINE.INSTANCES_CONFIDENCE_THRESH = 0.5
+    cfg.freeze()
+    return cfg
+
+def running_dectron(img, file_name):
+    import sys
+    import os
+    sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../detectron2')))
+    # from detectron2 import detectron2
+    from demo.predictor import VisualizationDemo
+    from detectron2.utils.logger import setup_logger
+    import multiprocessing as mp
+
+    from detectron2.data import MetadataCatalog
+    logger = setup_logger()
+    MetadataCatalog.get("dla_val").thing_classes = ['text', 'title', 'list', 'table', 'figure']
+    mp.set_start_method("spawn", force=True)
+
+    cfg = setup_cfg()
+
+    demo = VisualizationDemo(cfg)
+    predictions, visualized_output = demo.run_on_image(img)
+    # print(predictions)
+    visualized_output.save(file_name)
+    
+    logger.info(
+                "{}: detected ".format(
+                    predictions["instances"]
+                )
+            )

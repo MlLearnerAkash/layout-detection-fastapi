@@ -17,7 +17,7 @@ from app import get_image_from_bytes
 from app import detect_sample_model
 from app import add_bboxs_on_img
 from app import get_bytes_from_image
-
+from app import add_filtered_bboxs_on_img
 ####################################### logger #################################
 
 logger.remove()
@@ -170,10 +170,43 @@ def img_object_detection_to_img(file: bytes = File(...)):
 
     # model predict
     predict = detect_sample_model(input_image)
-
+    predict = predict[predict['confidence']<0.5]
     # add bbox on image
     final_image = add_bboxs_on_img(image = input_image, predict = predict)
 
     # return image in bytes format
     return StreamingResponse(content=get_bytes_from_image(final_image), media_type="image/jpeg")
 
+@app.post("/pred_filter_to_reliability_check")
+def img_object_detection_to_img(file: bytes = File(...)):
+    """
+    Object Detection from an image plot bbox on image
+
+    Args:
+        file (bytes): The image file in bytes format.
+    Returns:
+        Image: Image in bytes with bbox annotations.
+    """
+    # get image from bytes
+    input_image = get_image_from_bytes(file)
+
+    # model predict
+    predict = detect_sample_model(input_image)
+    # Calculate areas
+    predict['area'] = (predict['xmax'] - predict['xmin']) * (predict['ymax'] - predict['ymin'])
+
+    # Total area
+    total_area = predict['area'].sum()
+
+    # Area covered by detections with confidence > 80%
+    low_conf_area = predict[predict['confidence'] > 0.8]['area'].sum()
+
+    print(f"Total area: {total_area}")
+    print(f"% Area covered by detections with confidence > 80%: {(low_conf_area/total_area)*100}")
+    # print(predict)
+    predict = predict[predict['confidence']>0.8]
+    # add bbox on image
+    final_image = add_filtered_bboxs_on_img(image = input_image, predict = predict)
+
+    # return image in bytes format
+    return StreamingResponse(content=get_bytes_from_image(final_image), media_type="image/jpeg")
