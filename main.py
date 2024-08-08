@@ -202,11 +202,11 @@ def img_object_detection_to_img(file: bytes = File(...)):
     low_conf_area = predict[predict['confidence'] > 0.8]['area'].sum()
 
     print(f"Total area: {total_area}")
-    print(f"% Area covered by detections with confidence > 80%: {(low_conf_area/total_area)*100}")
+    print(f"% Area covered by detections with confidence > 80%: {(low_conf_area/total_area)*100}%")
     # print(predict)
     predict = predict[predict['confidence']>0.8]
     # add bbox on image
     final_image = add_filtered_bboxs_on_img(image = input_image, predict = predict)
-
+    # print(type(final_image))
     # return image in bytes format
     return StreamingResponse(content=get_bytes_from_image(final_image), media_type="image/jpeg")

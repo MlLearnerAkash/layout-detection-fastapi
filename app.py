@@ -173,10 +173,17 @@ def add_filtered_bboxs_on_img(image: Image, predict: pd.DataFrame()) -> Image:
         annotator.box_label(bbox, text, color=colors(row['class'], True))
         crop_img = np.array(image)[int(row['ymin']):int(row['ymax']), int(row['xmin']):int(row['xmax']),:]
         #NOTE: To use Detectron
-        if True:
+        if False:
             running_dectron(crop_img, f"crop_{i}")
-
-    running_dectron(np.array(image), f"original_image.png")
+        # Create a white image of the same size
+        # white_image = Image.new('RGB', image.size, (255, 255, 255))
+        
+        # # Copy the content inside the bounding box from the original image to the white image
+        # x_min, y_min, x_max, y_max = [int(i) for i in bbox]
+        # box_content = image.crop((x_min, y_min, x_max, y_max))
+        # white_image.paste(box_content, (x_min, y_min))
+        # white_image.save(f"crop_{i}.png")
+        # running_dectron(np.array(white_image), f"original_image_{i}.png")
     return Image.fromarray(annotator.result())
 
 ################################# Models #####################################
@@ -239,8 +246,8 @@ def running_dectron(img, file_name):
     # print(predictions)
     visualized_output.save(file_name)
     
-    logger.info(
-                "{}: detected ".format(
-                    predictions["instances"]
-                )
-            )
+    # logger.info(
+    #             "{}: detected ".format(
+    #                 predictions["instances"]
+    #             )
+    #         )
