@@ -18,6 +18,7 @@ from app import detect_sample_model
 from app import add_bboxs_on_img
 from app import get_bytes_from_image
 from app import add_filtered_bboxs_on_img
+from app import put_text_image
 ####################################### logger #################################
 
 logger.remove()
@@ -201,12 +202,19 @@ def img_object_detection_to_img(file: bytes = File(...)):
     # Area covered by detections with confidence > 80%
     low_conf_area = predict[predict['confidence'] > 0.8]['area'].sum()
 
-    print(f"Total area: {total_area}")
-    print(f"% Area covered by detections with confidence > 80%: {(low_conf_area/total_area)*100}%")
+    
     # print(predict)
     predict = predict[predict['confidence']>0.8]
     # add bbox on image
     final_image = add_filtered_bboxs_on_img(image = input_image, predict = predict)
+    print(f"Total area: {total_area}")
+    print(f"% Area covered by detections with confidence > 80%: {(low_conf_area/total_area)*100}%")
+    area_with_high_conf = (low_conf_area/total_area)*100
+    if area_with_high_conf > 90:
+        final_image = put_text_image(final_image, "PASS", (0, 255, 0))
+    else:
+        final_image = put_text_image(final_image, "FAIL", (255, 0, 0))
     # print(type(final_image))
     # return image in bytes format
-    return StreamingResponse(content=get_bytes_from_image(final_image), media_type="image/jpeg")
+    
+    return StreamingResponse(content=get_bytes_from_image(Image.fromarray(final_image)), media_type="image/jpeg")

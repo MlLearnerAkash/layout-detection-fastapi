@@ -113,7 +113,7 @@ def add_bboxs_on_img(image: Image, predict: pd.DataFrame()) -> Image:
 
     # sort predict by xmin value
     predict = predict.sort_values(by=['xmin'], ascending=True)
-    #Adding Layoyt parser
+    #Adding Layoyt parser 
     # lp_model = lp.Detectron2LayoutModel('lp://PubLayNet/faster_rcnn_R_50_FPN_3x/config', 
     #                              extra_config=["MODEL.ROI_HEADS.SCORE_THRESH_TEST", 0.8],
     #                              label_map={0: "Fig", 1: "Title", 2: "List", 3:"Table", 4:"Text"})
@@ -125,7 +125,7 @@ def add_bboxs_on_img(image: Image, predict: pd.DataFrame()) -> Image:
         text = f"{row['name']}: {int(row['confidence']*100)}%"
         # get the bounding box coordinates
         bbox = [row['xmin'], row['ymin'], row['xmax'], row['ymax']]
-        # height =row['ymax']-row['ymin']
+        # height =row['ymax']- row['ymin']
         # width = row['xmax']- row['xmin']
         # areas.append(height*width)
         # add the bounding box and text on the image
@@ -164,6 +164,7 @@ def add_filtered_bboxs_on_img(image: Image, predict: pd.DataFrame()) -> Image:
     for i, row in predict.iterrows():
         # create the text to be displayed on image
         text = f"{row['name']}: {int(row['confidence']*100)}%"
+        print("YOLO model predictions: ", row)
         # get the bounding box coordinates
         bbox = [row['xmin'], row['ymin'], row['xmax'], row['ymax']]
         height =row['ymax']-row['ymin']
@@ -171,20 +172,35 @@ def add_filtered_bboxs_on_img(image: Image, predict: pd.DataFrame()) -> Image:
         areas.append(height*width)
         # add the bounding box and text on the image
         annotator.box_label(bbox, text, color=colors(row['class'], True))
-        crop_img = np.array(image)[int(row['ymin']):int(row['ymax']), int(row['xmin']):int(row['xmax']),:]
         #NOTE: To use Detectron
-        if False:
-            running_dectron(crop_img, f"crop_{i}")
-        # Create a white image of the same size
-        # white_image = Image.new('RGB', image.size, (255, 255, 255))
+        tmp_class =[]
+        if False: 
+            # running_dectron(crop_img, f"crop_{i}")
+            # running_swindocseg(crop_img, f"swindoc_seg_{i}.png")
         
-        # # Copy the content inside the bounding box from the original image to the white image
-        # x_min, y_min, x_max, y_max = [int(i) for i in bbox]
-        # box_content = image.crop((x_min, y_min, x_max, y_max))
-        # white_image.paste(box_content, (x_min, y_min))
-        # white_image.save(f"crop_{i}.png")
-        # running_dectron(np.array(white_image), f"original_image_{i}.png")
-    return Image.fromarray(annotator.result())
+            # Create a white image of the same size
+            white_image = Image.new('RGB', image.size, (255, 255, 255))
+            # Copy the content inside the bounding box from the original image to the white image
+            x_min, y_min, x_max, y_max = [int(i) for i in bbox]
+            box_content = image.crop((x_min, y_min, x_max, y_max))
+            white_image.paste(box_content, (x_min, y_min))
+            #white_image.save(f"crop_{i}.png")
+            predictions = running_dectron(np.array(white_image), f"../detectron2/detection_output/output_detectron_{i}.png")
+            print(">>>>>>>>>>>>detectron>>>>>>>>>", predictions['instances'].scores.cpu().numpy(),  predictions['instances'].pred_classes.cpu().numpy())
+            try:
+                detectron_pred_class = predictions['instances'].pred_classes.cpu().numpy()[0]
+                if detectron_pred_class in [0, 1, 2]:
+                    tmp_class.append(0)
+                if detectron_pred_class in [3]:
+                    tmp_class.append(1)
+                if detectron_pred_class in [4]:
+                    tmp_class.append(2)
+            except:
+                pass
+            pred_classes, boxes, scores = running_swindocseg(np.array(white_image), f"../SwinDocSegmenter/detection_output/output_swindoc_{i}.png")
+            print(">>>>>>>>>>>>swin-doc>>>>>>>>>", scores, pred_classes)
+            
+    return Image.fromarray(annotator.result()) 
 
 ################################# Models #####################################
 
@@ -245,9 +261,81 @@ def running_dectron(img, file_name):
     predictions, visualized_output = demo.run_on_image(img)
     # print(predictions)
     visualized_output.save(file_name)
-    
+    return predictions
     # logger.info(
     #             "{}: detected ".format(
     #                 predictions["instances"]
     #             )
     #         )
+########################################SwinDocSeg ###########################################
+CLASSES = np.asarray(
+    [
+        "Caption",
+        "Footnote",
+        "Formula",
+        "List-item",
+        "Page-footer",
+        "Page-header",
+        "Picture",
+        "Section-header",
+        "Table",
+        "Text",
+        "Title",
+    ]
+)
+
+COLORS = [
+    (255, 0, 0),
+    (0, 255, 0),
+    (0, 0, 255),
+    (255, 255, 0),
+    (0, 255, 255),
+    (255, 0, 255),
+    (255, 255, 255),
+    (127, 0, 0),
+    (0, 127, 0),
+    (0, 0, 127),
+    (127, 127, 127),
+]
+
+config_path = "/home/akash/ws/layout-segmentation-yolo/SwinDocSegmenter/config_doclay.yaml"
+weights_path = "/home/akash/ws/layout-segmentation-yolo/SwinDocSegmenter/model_final_doclay_swindocseg.pth"
+import sys
+import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../')))
+from SwinDocSegmenter.test import DocumentLayoutSegmentation
+segmenter = DocumentLayoutSegmentation(config_path, weights_path, CLASSES, COLORS)
+
+def running_swindocseg(image, output_name):
+    
+    pred_clssses, boxes, scores = segmenter.segment_image(image, output_name)
+    return pred_clssses, boxes, scores
+
+
+############################################# PUT TEXT #####################
+def put_text_image(image, text, color):
+    image= np.array(image)
+    # Get image dimensions
+    height, width, _ = image.shape
+
+    # Define the rectangle color (white in this example)
+    rect_color = color  # BGR format
+
+    # Draw the rectangle covering the whole image
+    cv2.rectangle(image, (0, 0), (width-10, height-10), rect_color, thickness=3)  # -1 fills the rectangle
+
+    # Define the text and its properties
+    text = text
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    font_scale = 2
+    font_color = color  # Black color for the text
+    thickness = 3
+    text_size = cv2.getTextSize(text, font, font_scale, thickness)[0]
+
+    # Calculate the position to center the text
+    text_x = (width - text_size[0]) // 2
+    text_y = (height + text_size[1]) // 2
+
+    # Put the text on the image
+    cv2.putText(image, text, (text_x, text_y), font, font_scale, font_color, thickness)
+    return image
